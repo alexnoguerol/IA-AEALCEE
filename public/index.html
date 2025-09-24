@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AEALCEE GPT</title>
+
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet" />
+
+    <style>
+      :root{
+        --primary:#161650; --secondary:#52D3A8; --bg:#f5f7fb; --text:#111827;
+        --white:#fff; --muted:#6b7280; --radius:16px; --shadow:0 10px 30px rgba(0,0,0,.08);
+      }
+      *{box-sizing:border-box}
+      html,body{height:100%}
+      body{
+        margin:0;
+        background:
+          radial-gradient(1000px 600px at 110% -10%, rgba(82,211,168,.15), transparent 60%),
+          radial-gradient(800px 500px at -10% -10%, rgba(22,22,80,.15), transparent 60%),
+          var(--bg);
+        font-family:Montserrat,system-ui,Segoe UI,Roboto,Arial,sans-serif; color:var(--text);
+      }
+
+      /* Top bar */
+      .nav{ position:sticky; top:0; z-index:10; background:var(--primary); box-shadow:var(--shadow); }
+      .nav-inner{ max-width:960px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; padding:12px 16px; color:#fff }
+      .brand{display:flex; align-items:center; gap:12px; color:#fff; text-decoration:none}
+      .brand img{ height:28px; width:auto; object-fit:contain; display:block; filter:brightness(0) invert(1); }
+      .brand .title{font-weight:700; letter-spacing:.3px}
+      .metrics{ display:flex; align-items:center; gap:10px; font-size:12px; opacity:.9; flex-wrap:wrap }
+      .badge{ background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.25); padding:6px 10px; border-radius:999px; display:inline-flex; align-items:center; gap:6px }
+      .dotlive{ width:8px; height:8px; border-radius:50%; background:#4ade80; box-shadow:0 0 0 4px rgba(74,222,128,.25); }
+
+      /* Card & layout */
+      .wrap{max-width:960px; margin:24px auto; padding:0 16px}
+      .card{ background:var(--white); border-radius:24px; box-shadow:var(--shadow); overflow:hidden; border:1px solid rgba(22,22,80,.06); }
+
+      .head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px;
+             background:linear-gradient(135deg,var(--primary), #1c1c7a 70%); color:#fff; }
+      .head h1{ font-size:16px; margin:0; font-weight:700; letter-spacing:.4px; text-transform:uppercase; display:flex; align-items:center; gap:10px; }
+      .head h1::before{ content:""; width:10px; height:10px; border-radius:50%; background:var(--secondary); box-shadow:0 0 0 4px rgba(82,211,168,.2); }
+      .actions{ display:flex; gap:8px; flex-wrap:wrap }
+      .btn{ appearance:none; border:0; cursor:pointer; font:inherit; padding:10px 14px; border-radius:999px; font-weight:600; display:inline-flex; align-items:center; gap:8px; transition:.18s; }
+      .btn:active{ transform:translateY(1px) }
+      .btn-primary{ background:var(--secondary); color:#083b2f; }
+      .btn-outline{ background:transparent; color:#e8f9f3; border:1px solid rgba(255,255,255,.3); }
+      .btn-outline:hover{ background:rgba(255,255,255,.08) }
+      .btn svg{ width:16px; height:16px }
+
+      /* Chat */
+      .chat{ height:min(calc(100vh - 280px), 520px); min-height:320px; overflow:auto; padding:18px;
+             background:linear-gradient(180deg, rgba(22,22,80,.03), transparent 80%), #fff; }
+      .empty{ display:grid; place-items:center; height:100%; color:var(--muted); text-align:center; padding:24px; }
+
+      .row{ display:flex; gap:10px; margin:10px 0; align-items:flex-end }
+      .row.user{ justify-content:flex-end }
+      .avatar{ width:32px; height:32px; border-radius:50%; flex:0 0 32px;
+               background:linear-gradient(135deg,var(--secondary), #8ff0d1); display:grid; place-items:center; color:#064d3d; font-weight:700; font-size:13px;
+               box-shadow:0 6px 18px rgba(82,211,168,.35); }
+      .bubble{ max-width:76%; padding:12px 14px; border-radius:14px; box-shadow:0 6px 20px rgba(0,0,0,.06); border:1px solid rgba(22,22,80,.06); line-height:1.45; white-space:pre-wrap; word-wrap:break-word; }
+      .bubble.user{ background:linear-gradient(135deg,var(--secondary), #78e3c7); color:#053d31; border-color:transparent; border-bottom-right-radius:6px; }
+      .bubble.bot{ background:#f7f9ff; color:#0f172a; border-bottom-left-radius:6px; }
+
+      /* Composer */
+      .composer{ display:flex; gap:10px; padding:14px; border-top:1px solid rgba(22,22,80,.06); background:#fff; }
+      .input{ flex:1; display:flex; align-items:center; gap:10px; background:#f3f4f6; border-radius:999px; padding:10px 14px; border:1px solid rgba(22,22,80,.06); }
+      .input input{ flex:1; border:0; outline:none; font:inherit; background:transparent; }
+      .send{ background:var(--primary); color:#fff; border:0; border-radius:999px; padding:10px 14px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:8px; }
+      .send:disabled{ opacity:.6; cursor:not-allowed }
+
+      .chat::-webkit-scrollbar{ width:10px }
+      .chat::-webkit-scrollbar-thumb{ background:rgba(22,22,80,.15); border-radius:10px }
+      .chat::-webkit-scrollbar-track{ background:transparent }
+
+      /* Typing indicator */
+      .typing { display:inline-block; min-width:36px; }
+      .dot{ display:inline-block; width:6px; height:6px; margin:0 2px; background:#9aa3b2; border-radius:50%; opacity:.3; animation: blink 1.2s infinite; }
+      .dot:nth-child(2){ animation-delay:.2s } .dot:nth-child(3){ animation-delay:.4s }
+      @keyframes blink { 0%,80%,100%{opacity:.2} 40%{opacity:1} }
+
+      /* Disabled input state */
+      .input.disabled{ opacity:.6; filter:grayscale(.1) }
+
+      /* Small “sources” label */
+      .src { margin-top:8px; font-size:12px; color:#6b7280; }
+    </style>
+  </head>
+  <body>
+    <div class="nav">
+      <div class="nav-inner">
+        <a class="brand" href="https://aealcee.org" target="_blank" rel="noopener">
+          <img src="https://aealcee.org/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Flogo.70b01939.png&w=128&q=75%201x" alt="AEALCEE" onerror="this.style.display='none'"/>
+          <span class="title">GPT</span>
+        </a>
+        <div class="metrics">
+          <span class="badge" title="Usuarios conectados">
+            <span class="dotlive"></span>
+            Usuarios conectados: <strong id="usersCount">--</strong>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="card">
+        <div class="head">
+          <h1>AEALCEE GPT</h1>
+          <div class="actions">
+            <button id="resetBtn" class="btn btn-outline" title="Reiniciar chat">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M3 12a9 9 0 1 0 3-6.708" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 4v5h5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Reiniciar
+            </button>
+            <button id="modelBtn" class="btn btn-primary" title="Modelo en uso">--</button>
+          </div>
+        </div>
+
+        <div id="log" class="chat">
+          <div id="empty" class="empty">
+            <div>
+              <div style="font-weight:700;color:var(--primary);margin-bottom:8px">¡Hola!</div>
+              <div style="color:var(--muted)">Escribe tu primera pregunta abajo para empezar.</div>
+            </div>
+          </div>
+        </div>
+
+        <form id="form" class="composer">
+          <div class="input">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <input id="msg" type="text" placeholder="Escribe tu mensaje..." autocomplete="off" />
+          </div>
+          <button class="send" type="submit" id="sendBtn">
+            Enviar
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 5l7 7-7 7" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      const log = document.getElementById("log");
+      const form = document.getElementById("form");
+      const msg = document.getElementById("msg");
+      const resetBtn = document.getElementById("resetBtn");
+      const modelBtn = document.getElementById("modelBtn");
+      const empty = document.getElementById("empty");
+      const sendBtn = document.getElementById("sendBtn");
+      const usersCountEl = document.getElementById("usersCount");
+
+      let history = [];
+      let typingRow = null;
+      let cooldownTimer = null;
+
+      async function refreshModelBadge() {
+        try {
+          const r = await fetch("/model");
+          const d = await r.json();
+          if (d?.model) modelBtn.textContent = d.model;
+        } catch (_) {
+          modelBtn.textContent = "--";
+        }
+      }
+      async function refreshUsers() {
+        try {
+          const r = await fetch("/stats");
+          const d = await r.json();
+          if (typeof d?.users === "number") usersCountEl.textContent = String(d.users);
+        } catch (_) {
+          usersCountEl.textContent = "--";
+        }
+      }
+      refreshModelBadge();
+      refreshUsers();
+      setInterval(refreshUsers, 8000);
+
+      function escapeHTML(s){
+        return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+      }
+
+      function addRow({who, text, typing=false, sources=[]}) {
+        if (empty) empty.remove();
+        const row = document.createElement("div");
+        row.className = "row " + (who === "user" ? "user" : "bot");
+
+        const bubble = document.createElement("div");
+        bubble.className = "bubble " + (who === "user" ? "user" : "bot");
+
+        if (typing) {
+          bubble.innerHTML = `<span class="typing"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>`;
+        } else {
+          const safe = escapeHTML(text || "");
+          const src = (Array.isArray(sources) && sources.length)
+            ? `<div class="src">Fuentes: ${sources.map(escapeHTML).join(", ")}</div>` : "";
+          bubble.innerHTML = safe + src;
+        }
+
+        if (who === "user") {
+          row.appendChild(bubble);
+          const av = document.createElement("div");
+          av.className = "avatar";
+          av.textContent = "Tú";
+          row.appendChild(av);
+        } else {
+          const av = document.createElement("div");
+          av.className = "avatar";
+          av.textContent = "AI";
+          row.appendChild(av);
+          row.appendChild(bubble);
+        }
+
+        log.appendChild(row);
+        log.scrollTop = log.scrollHeight;
+        return row;
+      }
+
+      function setUIBusy(busy) {
+        sendBtn.disabled = busy;
+        msg.disabled = busy;
+        const inputWrap = document.querySelector(".input");
+        inputWrap.classList.toggle("disabled", busy);
+      }
+
+      function showTyping() {
+        if (!typingRow) typingRow = addRow({who:"bot", typing:true});
+      }
+      function hideTyping() {
+        if (typingRow) { typingRow.remove(); typingRow = null; }
+      }
+
+      function startCooldown(ms) {
+        setUIBusy(true);
+        let remaining = Math.ceil(ms / 1000);
+        const original = sendBtn.textContent;
+        sendBtn.textContent = `Espera ${remaining}s`;
+        cooldownTimer = setInterval(() => {
+          remaining--;
+          if (remaining <= 0) {
+            clearInterval(cooldownTimer);
+            cooldownTimer = null;
+            sendBtn.textContent = original;
+            setUIBusy(false);
+            msg.focus();
+          } else {
+            sendBtn.textContent = `Espera ${remaining}s`;
+          }
+        }, 1000);
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        if (cooldownTimer) return;
+        const text = msg.value.trim();
+        if (!text) return;
+
+        addRow({who:"user", text});
+        msg.value = "";
+        msg.focus();
+
+        setUIBusy(true);
+        showTyping();
+
+        try {
+          const resp = await fetch("/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: text, history }),
+          });
+
+          if (resp.status === 429) {
+            const data = await resp.json().catch(() => ({}));
+            hideTyping();
+            addRow({who:"bot", text: data?.error || "Has enviado mensajes demasiado rápido. Espera un momento."});
+            if (typeof data?.users === "number") usersCountEl.textContent = String(data.users);
+            if (data?.cooldownMs) startCooldown(data.cooldownMs);
+            if (data?.modelUsed) modelBtn.textContent = data.modelUsed;
+            return;
+          }
+
+          const data = await resp.json();
+          hideTyping();
+
+          const reply = data.reply ?? "(sin respuesta)";
+          addRow({who:"bot", text: reply, sources: Array.isArray(data.sources) ? data.sources : []});
+          if (data.modelUsed) modelBtn.textContent = data.modelUsed;
+          if (typeof data.users === "number") usersCountEl.textContent = String(data.users);
+
+          history.push({ role: "user", text });
+          history.push({ role: "model", text: reply });
+        } catch (_) {
+          hideTyping();
+          addRow({who:"bot", text:"Ocurrió un error al conectar con el servidor."});
+        } finally {
+          if (!cooldownTimer) setUIBusy(false);
+        }
+      });
+
+      resetBtn.addEventListener("click", () => {
+        history = [];
+        log.innerHTML = `
+          <div id="empty" class="empty">
+            <div>
+              <div style="font-weight:700;color:var(--primary);margin-bottom:8px">Chat reiniciado</div>
+              <div style="color:var(--muted)">Escribe un nuevo mensaje para comenzar.</div>
+            </div>
+          </div>
+        `;
+        msg.value = ""; msg.focus();
+        hideTyping();
+        if (cooldownTimer) { clearInterval(cooldownTimer); cooldownTimer = null; }
+        setUIBusy(false);
+        refreshModelBadge();
+        refreshUsers();
+      });
+
+      msg.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          form.requestSubmit();
+        }
+      });
+    </script>
+  </body>
+</html>
