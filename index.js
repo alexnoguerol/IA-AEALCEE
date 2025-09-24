@@ -115,8 +115,8 @@ function ensureSession(req, res) {
   }
   let kid = req.signedCookies?.kid;
   if (kid === undefined) {
-    const h = crypto.createHash("sha256").update(sid).digest();
-    kid = h[0] % genClients.length;
+    kid = Math.floor(Math.random() * genClients.length);
+    if (!Number.isFinite(kid) || kid < 0) kid = 0;
     res.cookie("kid", String(kid), {
       httpOnly: true, sameSite: "lax", secure: !!process.env.COOKIE_SECURE,
       signed: true, maxAge: 24 * 60 * 60 * 1000, path: "/",
@@ -149,10 +149,33 @@ app.get("/stats", (req, res) => {
   res.json({ users: countActiveUsers() });
 });
 
-/* ========== Modelos y fallback ========== */
-const PRIMARY_MODEL = "gemini-2.5-flash";
-const FALLBACK_MODEL = "gemini-1.5-flash";
-let ACTIVE_MODEL = PRIMARY_MODEL;
+/* ========== Modelos y fallback con prioridad ========== */
+const MODEL_PRIORITY = [
+  "gemini-2.5-pro",
+  "gemini-1.5-pro",
+  "gemini-2.5-flash",
+  "gemini-1.5-flash",
+];
+const MODEL_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutos de enfriamiento tras error de cuota
+const modelCooldowns = new Map(); // modelId -> timestamp hasta cuando se evita
+let ACTIVE_MODEL = MODEL_PRIORITY[0];
+
+function modelIsAvailable(modelId) {
+  const until = modelCooldowns.get(modelId) || 0;
+  if (until <= Date.now()) {
+    if (until) modelCooldowns.delete(modelId);
+    return true;
+  }
+  return false;
+}
+
+function markModelCooldown(modelId, err) {
+  const until = Date.now() + MODEL_COOLDOWN_MS;
+  modelCooldowns.set(modelId, until);
+  const status = err?.status || err?.response?.status;
+  const msg = err?.message || String(err);
+  console.warn(`[modelo] ${modelId} en cooldown hasta ${new Date(until).toISOString()} (status=${status || "?"}). ${msg}`);
+}
 
 app.get("/model", (req, res) => {
   const { sid } = ensureSession(req, res);
@@ -381,24 +404,35 @@ Cuando uses una fuente, menciona el nombre del archivo consultado.
     };
 
     let reply;
-    let modelUsed = ACTIVE_MODEL;
+    let modelUsed = null;
+    let lastErr = null;
 
-    try {
-      reply = await runWithModel(ACTIVE_MODEL);
-    } catch (err) {
-      if (ACTIVE_MODEL === PRIMARY_MODEL && isQuotaOrRateErr(err)) {
-        try {
-          reply = await runWithModel(FALLBACK_MODEL);
-          modelUsed = FALLBACK_MODEL;
-          ACTIVE_MODEL = FALLBACK_MODEL;
-          console.warn(`[modelo] Cambio automático a fallback: ${FALLBACK_MODEL}`);
-        } catch (err2) {
-          console.error(err2);
-          throw err2;
+    const modelsToTry = [];
+    for (const modelId of MODEL_PRIORITY) {
+      if (modelIsAvailable(modelId)) modelsToTry.push(modelId);
+    }
+    if (!modelsToTry.length) modelsToTry.push(...MODEL_PRIORITY);
+
+    for (const modelId of modelsToTry) {
+      try {
+        reply = await runWithModel(modelId);
+        modelUsed = modelId;
+        ACTIVE_MODEL = modelId;
+        break;
+      } catch (err) {
+        lastErr = err;
+        const status = err?.status || err?.response?.status;
+        if (isQuotaOrRateErr(err) || status === 503) {
+          markModelCooldown(modelId, err);
+          console.warn(`[modelo] ${modelId} no disponible, probando siguiente opción.`);
+          continue;
         }
-      } else {
-        throw err;
+        break;
       }
+    }
+
+    if (!reply) {
+      throw lastErr || new Error("No se pudo generar respuesta con los modelos disponibles.");
     }
 
     res.set("X-Model-Used", modelUsed);
