@@ -8,6 +8,7 @@ import fsSync from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { createRequire } from "module";
 
 dotenv.config();
 
@@ -20,13 +21,15 @@ app.use(express.json());
 app.use(express.static("public"));
 app.use(cookieParser(process.env.COOKIE_SECRET || "cambia-esto-por-un-secreto"));
 
+const requireCjs = createRequire(import.meta.url);
+
 /* ========== Carga perezosa de pdf-parse ========== */
 let _pdfParse = null;
 async function ensurePdfParse() {
   if (_pdfParse) return _pdfParse;
   try {
-    const mod = await import("pdf-parse");
-    _pdfParse = mod.default || mod;
+    const mod = requireCjs("pdf-parse");
+    _pdfParse = typeof mod === "function" ? mod : mod?.default || mod;
     return _pdfParse;
   } catch (e) {
     console.warn("PDF deshabilitado (no se pudo cargar pdf-parse).", e?.message || e);
