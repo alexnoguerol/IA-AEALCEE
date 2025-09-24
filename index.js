@@ -15,6 +15,46 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function parseBoolean(value) {
+  if (typeof value !== "string") return false;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return false;
+  return ["1", "true", "yes", "on"].includes(normalized);
+}
+
+const DEV_MODE = parseBoolean(process.env.DEV_MODE);
+const LOGS_DIR = path.join(__dirname, "logs");
+
+if (DEV_MODE) {
+  try {
+    fsSync.mkdirSync(LOGS_DIR, { recursive: true });
+  } catch (err) {
+    console.error("No se pudo crear la carpeta de logs de desarrollo:", err);
+  }
+}
+
+function safeStringify(data) {
+  try {
+    return JSON.stringify(data, null, 2);
+  } catch (err) {
+    return `[No serializable: ${err?.message || err}]`;
+  }
+}
+
+async function appendDevLog(sid, label, payload) {
+  if (!DEV_MODE) return;
+  const safeSid = typeof sid === "string" ? sid.replace(/[^a-z0-9_-]/gi, "_") : "desconocido";
+  const logPath = path.join(LOGS_DIR, `${safeSid}.log`);
+  const timestamp = new Date().toISOString();
+  const content = typeof payload === "string" ? payload : safeStringify(payload);
+  const block = `[${timestamp}] ${label}\n${content}\n\n`;
+  try {
+    await fs.appendFile(logPath, block, "utf8");
+  } catch (err) {
+    console.error("No se pudo escribir en el log de desarrollo:", err);
+  }
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -310,20 +350,34 @@ Cuando uses una fuente, menciona el nombre del archivo consultado.
       ...history.map(t => ({ role: t.role, parts: [{ text: t.text }] })),
       { role: "user", parts: [{ text: message }] },
     ];
+    await appendDevLog(sid, "USER_INPUT", {
+      message,
+      history,
+    });
 
     // Cliente con la key asignada
     const client = genClients[kid] || genClients[0];
 
     const runWithModel = async (modelId) => {
       const model = client.getGenerativeModel({ model: modelId });
-      const result = await withRetries(
-        () => model.generateContent({
-          contents,
-          generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
-        }),
-        { tries: 3, baseDelayMs: 500 }
-      );
-      return result?.response?.text?.() || "(sin respuesta)";
+      try {
+        const result = await withRetries(
+          () => model.generateContent({
+            contents,
+            generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
+          }),
+          { tries: 3, baseDelayMs: 500 }
+        );
+        await appendDevLog(sid, `API_RESPONSE (${modelId})`, result?.response ?? result);
+        return result?.response?.text?.() || "(sin respuesta)";
+      } catch (err) {
+        await appendDevLog(sid, `API_ERROR (${modelId})`, {
+          message: err?.message || String(err),
+          status: err?.status || err?.response?.status,
+          stack: err?.stack,
+        });
+        throw err;
+      }
     };
 
     let reply;
