@@ -1,0 +1,96 @@
+[2025-09-24T17:25:17.213Z] USER_INPUT
+{
+  "message": "como funciona la ejecutiva segun el reglamento?",
+  "history": []
+}
+
+[2025-09-24T17:25:17.526Z] CONTEXT_INFO
+{
+  "docLimit": 8000,
+  "docs": [
+    {
+      "name": "Reglament_Estatuts_FEiE_VersioFinal (1).pdf",
+      "length": 8000,
+      "truncated": true
+    }
+  ]
+}
+
+[2025-09-24T17:25:26.997Z] API_RESPONSE (gemini-2.5-flash)
+{
+  "candidates": [
+    {
+      "content": {
+        "role": "model"
+      },
+      "finishReason": "MAX_TOKENS",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 3887,
+    "totalTokenCount": 4910,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 3887
+      }
+    ],
+    "thoughtsTokenCount": 1023
+  },
+  "modelVersion": "gemini-2.5-flash",
+  "responseId": "hinUaOi0LqfMkdUPx7uxiAM"
+}
+
+[2025-09-24T17:25:27.001Z] CONTEXT_RETRY
+{
+  "reason": "MAX_TOKENS",
+  "previousLimit": 8000,
+  "nextLimit": 4000
+}
+
+[2025-09-24T17:25:27.216Z] CONTEXT_INFO
+{
+  "docLimit": 4000,
+  "docs": [
+    {
+      "name": "Reglament_Estatuts_FEiE_VersioFinal (1).pdf",
+      "length": 4000,
+      "truncated": true
+    }
+  ]
+}
+
+[2025-09-24T17:25:35.309Z] API_RESPONSE (gemini-2.5-flash)
+{
+  "candidates": [
+    {
+      "content": {
+        "role": "model"
+      },
+      "finishReason": "MAX_TOKENS",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 2629,
+    "totalTokenCount": 3652,
+    "cachedContentTokenCount": 1068,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 2629
+      }
+    ],
+    "cacheTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 1068
+      }
+    ],
+    "thoughtsTokenCount": 1023
+  },
+  "modelVersion": "gemini-2.5-flash",
+  "responseId": "jynUaN_sDcvFnsEPobmI4A0"
+}
+
