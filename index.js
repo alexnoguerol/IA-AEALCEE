@@ -156,6 +156,12 @@ const MODEL_PRIORITY = [
   "gemini-2.5-flash",
   "gemini-1.5-flash",
 ];
+const MODEL_MAX_OUT = {
+  "gemini-2.5-pro": 65536,
+  "gemini-1.5-pro": 8192,
+  "gemini-2.5-flash": 8192,
+  "gemini-1.5-flash": 4096,
+};
 const MODEL_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutos de enfriamiento tras error de cuota
 const modelCooldowns = new Map(); // modelId -> timestamp hasta cuando se evita
 let ACTIVE_MODEL = MODEL_PRIORITY[0];
@@ -383,11 +389,12 @@ Cuando uses una fuente, menciona el nombre del archivo consultado.
 
     const runWithModel = async (modelId) => {
       const model = client.getGenerativeModel({ model: modelId });
+      const maxOutputTokens = MODEL_MAX_OUT[modelId] || 1024;
       try {
         const result = await withRetries(
           () => model.generateContent({
             contents,
-            generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
+            generationConfig: { temperature: 0.7, maxOutputTokens },
           }),
           { tries: 3, baseDelayMs: 500 }
         );
