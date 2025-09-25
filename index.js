@@ -443,7 +443,7 @@ Cuando uses una fuente, menciona el nombre del archivo consultado.
     }
 
     res.set("X-Model-Used", modelUsed);
-    return res.json({ reply, modelUsed, users, sources: docs.map(d => d.name) });
+    return res.json({ reply, modelUsed, users });
   } catch (err) {
     console.error(err);
     const status = err?.status || err?.response?.status;

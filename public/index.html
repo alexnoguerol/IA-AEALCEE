@@ -84,8 +84,6 @@
       /* Disabled input state */
       .input.disabled{ opacity:.6; filter:grayscale(.1) }
 
-      /* Small “sources” label */
-      .src { margin-top:8px; font-size:12px; color:#6b7280; }
     </style>
   </head>
   <body>
@@ -179,7 +177,7 @@
         return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
       }
 
-      function addRow({who, text, typing=false, sources=[]}) {
+      function addRow({who, text, typing=false}) {
         if (empty) empty.remove();
         const row = document.createElement("div");
         row.className = "row " + (who === "user" ? "user" : "bot");
@@ -191,9 +189,7 @@
           bubble.innerHTML = `<span class="typing"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>`;
         } else {
           const safe = escapeHTML(text || "");
-          const src = (Array.isArray(sources) && sources.length)
-            ? `<div class="src">Fuentes: ${sources.map(escapeHTML).join(", ")}</div>` : "";
-          bubble.innerHTML = safe + src;
+          bubble.innerHTML = safe;
         }
 
         if (who === "user") {
@@ -282,7 +278,7 @@
           hideTyping();
 
           const reply = data.reply ?? "(sin respuesta)";
-          addRow({who:"bot", text: reply, sources: Array.isArray(data.sources) ? data.sources : []});
+          addRow({who:"bot", text: reply});
           if (data.modelUsed) modelBtn.textContent = data.modelUsed;
           if (typeof data.users === "number") usersCountEl.textContent = String(data.users);
 
