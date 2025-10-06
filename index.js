@@ -283,6 +283,153 @@ async function readDocSafely(filename) {
   }
 }
 
+/* ========== Embeddings de documentación ========== */
+function parsePositiveInt(value, fallback) {
+  const parsed = parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || "text-embedding-004";
+const EMBEDDING_CHUNK_SIZE = parsePositiveInt(process.env.EMBED_CHUNK_SIZE, 1400);
+const EMBEDDING_CHUNK_OVERLAP = Math.min(
+  EMBEDDING_CHUNK_SIZE - 1,
+  parsePositiveInt(process.env.EMBED_CHUNK_OVERLAP, 200),
+);
+const EMBEDDING_MAX_CHUNKS_PER_DOC = parsePositiveInt(process.env.EMBED_MAX_CHUNKS_PER_DOC, 40);
+
+let embeddingClientOffset = 0;
+let docEmbeddings = [];
+let embeddingsReady = false;
+let embeddingsBuilding = false;
+
+function chunkTextForEmbeddings(text) {
+  const clean = (text || "").replace(/\r\n/g, "\n");
+  const chunks = [];
+  if (!clean.trim()) return chunks;
+
+  const chunkSize = Math.max(200, EMBEDDING_CHUNK_SIZE);
+  const overlap = Math.max(0, Math.min(EMBEDDING_CHUNK_OVERLAP, chunkSize - 1));
+  const step = Math.max(1, chunkSize - overlap);
+
+  let start = 0;
+  while (start < clean.length) {
+    const end = Math.min(clean.length, start + chunkSize);
+    const slice = clean.slice(start, end).trim();
+    if (slice) chunks.push(slice);
+    if (end >= clean.length) break;
+    start += step;
+  }
+
+  if (!chunks.length) {
+    const fallback = clean.trim();
+    if (fallback) chunks.push(fallback);
+  }
+
+  return chunks;
+}
+
+function cosineSimilarity(a = [], b = []) {
+  const length = Math.min(a.length, b.length);
+  if (!length) return 0;
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < length; i++) {
+    const av = a[i] ?? 0;
+    const bv = b[i] ?? 0;
+    dot += av * bv;
+    normA += av * av;
+    normB += bv * bv;
+  }
+  if (!normA || !normB) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+async function generateEmbeddingVector(text) {
+  const payload = (text || "").trim();
+  if (!payload) return null;
+
+  const truncated = payload.length > EMBEDDING_CHUNK_SIZE
+    ? payload.slice(0, EMBEDDING_CHUNK_SIZE)
+    : payload;
+
+  const request = { content: { parts: [{ text: truncated }] } };
+
+  for (let attempt = 0; attempt < genClients.length; attempt++) {
+    const idx = (embeddingClientOffset + attempt) % genClients.length;
+    const client = genClients[idx];
+    try {
+      const model = client.getGenerativeModel({ model: EMBEDDING_MODEL });
+      const response = await withRetries(
+        () => model.embedContent(request),
+        { tries: 2, baseDelayMs: 300 },
+      );
+      const vector = response?.embedding?.values;
+      if (Array.isArray(vector) && vector.length) {
+        embeddingClientOffset = (idx + 1) % genClients.length;
+        return vector;
+      }
+    } catch (err) {
+      const status = err?.status || err?.response?.status;
+      if (isQuotaOrRateErr(err) || status === 503) {
+        console.warn(`[embedding] API key ${idx} en cooldown: ${err?.message || err}`);
+        continue;
+      }
+      console.warn("[embedding] Error generando embedding:", err?.message || err);
+    }
+  }
+
+  return null;
+}
+
+async function buildEmbeddingsIndex() {
+  if (embeddingsBuilding) return;
+  embeddingsBuilding = true;
+  embeddingsReady = false;
+
+  try {
+    const titles = await listDocTitles();
+    if (!titles.length) {
+      docEmbeddings = [];
+      embeddingsReady = false;
+      console.log("[embedding] No se encontraron archivos en documentacion/.");
+      return;
+    }
+
+    const newIndex = [];
+    for (const name of titles) {
+      const content = await readDocSafely(name);
+      if (!content?.trim()) continue;
+      const chunks = chunkTextForEmbeddings(content).slice(0, EMBEDDING_MAX_CHUNKS_PER_DOC);
+      for (let i = 0; i < chunks.length; i++) {
+        const chunkText = chunks[i];
+        const vector = await generateEmbeddingVector(chunkText);
+        if (!vector) continue;
+        newIndex.push({
+          name,
+          chunk: i,
+          text: chunkText,
+          embedding: vector,
+        });
+      }
+    }
+
+    docEmbeddings = newIndex;
+    embeddingsReady = newIndex.length > 0;
+    if (embeddingsReady) {
+      console.log(`[embedding] Índice listo: ${newIndex.length} fragmentos en ${titles.length} archivos usando ${EMBEDDING_MODEL}.`);
+    } else {
+      console.warn("[embedding] No se generaron embeddings válidos. Se usará la búsqueda por título como respaldo.");
+    }
+  } catch (err) {
+    console.warn("[embedding] Falló la generación del índice:", err?.message || err);
+    docEmbeddings = [];
+    embeddingsReady = false;
+  } finally {
+    embeddingsBuilding = false;
+  }
+}
+
 // Matching simple por palabras: puntúa por apariciones
 function scoreTitle(title, query) {
   const q = query.toLowerCase();
@@ -295,13 +442,42 @@ function scoreTitle(title, query) {
   return score + (t.includes("aealcee") ? 0.5 : 0); // ligero boost
 }
 
-// Selecciona hasta MAX_DOCS por título
+// Selecciona hasta MAX_DOCS apoyándose en embeddings (fallback a títulos)
 async function selectDocsForQuery(query) {
   const titles = await listDocTitles();
   if (!titles.length) return { titles: [], docs: [] };
 
+  const sanitizedQuery = (query || "").trim();
+  if (embeddingsReady && docEmbeddings.length && sanitizedQuery) {
+    const queryVector = await generateEmbeddingVector(sanitizedQuery);
+    if (queryVector?.length) {
+      const rankedChunks = docEmbeddings
+        .map(item => ({
+          name: item.name,
+          chunk: item.chunk,
+          text: item.text,
+          score: cosineSimilarity(queryVector, item.embedding),
+        }))
+        .filter(item => Number.isFinite(item.score))
+        .sort((a, b) => b.score - a.score);
+
+      const seen = new Set();
+      const docs = [];
+      for (const chunk of rankedChunks) {
+        if (docs.length >= MAX_DOCS) break;
+        if (seen.has(chunk.name)) continue;
+        seen.add(chunk.name);
+        const displayName = chunk.chunk > 0 ? `${chunk.name} (fragmento ${chunk.chunk + 1})` : chunk.name;
+        docs.push({ name: displayName, content: chunk.text });
+      }
+      if (docs.length) {
+        return { titles, docs };
+      }
+    }
+  }
+
   const ranked = titles
-    .map(name => ({ name, s: scoreTitle(name, query) }))
+    .map(name => ({ name, s: scoreTitle(name, sanitizedQuery) }))
     .sort((a, b) => b.s - a.s);
 
   const chosen = ranked.filter(x => x.s > 0).slice(0, MAX_DOCS).map(x => x.name);
@@ -453,6 +629,8 @@ Si el contenido adjunto ayuda, úsalo. Si no, sugiere consultar https://aealcee.
 });
 
 /* ========== Arranque ========== */
+await buildEmbeddingsIndex();
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`✅ Servidor listo en http://localhost:${port}`);
