@@ -1,0 +1,85 @@
+[2025-10-06T15:57:58.756Z] USER_INPUT
+{
+  "message": "hola",
+  "history": []
+}
+
+[2025-10-06T15:58:05.405Z] API_RESPONSE (gemini-2.5-pro)
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "Hola, soy AEALCEE GPT, un asistente de IA diseñado para resolver dudas sobre la Asociación Española de Alumnos de Ciencias Económicas y Empresariales (AEALCEE) y sus congresos. ¿En qué puedo ayudarte?"
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 4167,
+    "candidatesTokenCount": 48,
+    "totalTokenCount": 4735,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 4167
+      }
+    ],
+    "thoughtsTokenCount": 520
+  },
+  "modelVersion": "gemini-2.5-pro",
+  "responseId": "DOfjaNf8JLmvxN8PpdXXgQE"
+}
+
+[2025-10-06T15:58:21.396Z] USER_INPUT
+{
+  "message": "cuando es el proximo congreso?",
+  "history": [
+    {
+      "role": "user",
+      "text": "hola"
+    },
+    {
+      "role": "model",
+      "text": "Hola, soy AEALCEE GPT, un asistente de IA diseñado para resolver dudas sobre la Asociación Española de Alumnos de Ciencias Económicas y Empresariales (AEALCEE) y sus congresos. ¿En qué puedo ayudarte?"
+    }
+  ]
+}
+
+[2025-10-06T15:58:38.975Z] API_RESPONSE (gemini-2.5-pro)
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "La documentación disponible presenta información contradictoria sobre las fechas del próximo congreso.\n\nPor un lado, se indica que el LVI Congreso se celebrará en Salamanca y el programa detalla actividades para los días 15, 16, 17 y 18, sin especificar el mes. Por otro, una sección del mismo documento menciona que el LV Congreso será del 2 al 6 de abril de 2025 en Madrid.\n\nDebido a estas discrepancias, no es posible confirmar la fecha con certeza. Te recomiendo consultar la página oficial de la AEALCEE para obtener la información más actualizada: https://aealcee.org"
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 16065,
+    "candidatesTokenCount": 136,
+    "totalTokenCount": 17473,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 16065
+      }
+    ],
+    "thoughtsTokenCount": 1272
+  },
+  "modelVersion": "gemini-2.5-pro",
+  "responseId": "LufjaIeVD5DUxs0Pi-uTiA4"
+}
+

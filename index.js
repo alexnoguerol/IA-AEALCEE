@@ -158,9 +158,9 @@ const MODEL_PRIORITY = [
 ];
 const MODEL_MAX_OUT = {
   "gemini-2.5-pro": 65536,
-  "gemini-1.5-pro": 8192,
-  "gemini-2.5-flash": 8192,
-  "gemini-1.5-flash": 4096,
+  "gemini-1.5-pro": 65536,
+  "gemini-2.5-flash": 65536,
+  "gemini-1.5-flash": 65536,
 };
 const MODEL_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutos de enfriamiento tras error de cuota
 const modelCooldowns = new Map(); // modelId -> timestamp hasta cuando se evita
@@ -369,8 +369,7 @@ ${instrucciones || "(sin instrucciones específicas)"}
 
 ${titlesLine}
 
-Si el contenido adjunto ayuda, úsalo. Si no, responde con lo que sepas y sugiere consultar https://aealcee.org.
-Cuando uses una fuente, menciona el nombre del archivo consultado.
+Si el contenido adjunto ayuda, úsalo. Si no, sugiere consultar https://aealcee.org.
 `.trim();
 
     const contents = [
