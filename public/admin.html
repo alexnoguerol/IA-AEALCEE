@@ -1,0 +1,782 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Panel de administración · AEALCEE GPT</title>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="nav">
+      <div class="nav-inner">
+        <a class="brand" href="https://aealcee.org" target="_blank" rel="noopener">
+          <img
+            src="https://aealcee.org/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Flogo.70b01939.png&w=128&q=75%201x"
+            alt="AEALCEE"
+            onerror="this.style.display='none'"
+          />
+          <span class="title">GPT</span>
+        </a>
+        <div class="nav-right">
+          <a id="navExtraLink" class="nav-link is-visible" href="/">Volver al chat</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="card">
+        <div class="head">
+          <h1>Panel de administración</h1>
+          <div class="actions">
+            <button id="logoutBtn" class="btn btn-outline hidden" type="button">Cerrar sesión</button>
+          </div>
+        </div>
+        <div class="admin-body">
+          <div id="sessionLoader" class="session-loader hidden">
+            <span class="spinner" aria-hidden="true"></span>
+            <span>Comprobando sesión...</span>
+          </div>
+
+          <section id="loginSection" aria-labelledby="loginTitle">
+            <div>
+              <h2 id="loginTitle" class="section-title">Acceso restringido</h2>
+              <p class="section-subtitle">Introduce tus credenciales de administrador.</p>
+            </div>
+            <form id="loginForm" class="stack" autocomplete="on">
+              <label for="loginUser">Usuario</label>
+              <input id="loginUser" class="control" type="text" autocomplete="username" required />
+
+              <label for="loginPassword">Contraseña</label>
+              <input
+                id="loginPassword"
+                class="control"
+                type="password"
+                autocomplete="current-password"
+                required
+              />
+
+              <button class="btn btn-primary full" type="submit">Iniciar sesión</button>
+            </form>
+            <div id="loginFeedback" class="feedback" role="alert"></div>
+          </section>
+
+          <section id="appSection" class="hidden" aria-live="polite">
+            <div class="tabs" role="tablist">
+              <button class="tab-button active" data-tab="docs" type="button">Documentación</button>
+              <button class="tab-button" data-tab="prompt" type="button">Prompt</button>
+              <button class="tab-button" data-tab="users" type="button">Usuarios admin</button>
+            </div>
+
+            <div class="tab-panels">
+              <section class="tab-panel active" data-panel="docs" aria-labelledby="docsTitle">
+                <div class="panel-header">
+                  <div>
+                    <h2 id="docsTitle" class="section-title">Documentación</h2>
+                    <p class="section-subtitle">Gestiona los archivos que alimentan al asistente.</p>
+                  </div>
+                  <label class="upload-label">
+                    <span>Subir archivo</span>
+                    <input id="docsUpload" type="file" />
+                  </label>
+                </div>
+                <div id="docsFeedback" class="feedback" role="alert"></div>
+                <div id="docsList" class="docs-list">
+                  <div class="empty-state">Aún no se ha cargado ninguna documentación.</div>
+                </div>
+              </section>
+
+              <section class="tab-panel" data-panel="prompt" aria-labelledby="promptTitle">
+                <div class="panel-header">
+                  <div>
+                    <h2 id="promptTitle" class="section-title">Prompt</h2>
+                    <p class="section-subtitle">Edita las instrucciones globales del asistente.</p>
+                  </div>
+                  <div class="panel-actions">
+                    <button id="refreshPromptBtn" class="chip-btn" type="button">Recargar</button>
+                    <button id="savePromptBtn" class="btn btn-primary" type="button">Guardar</button>
+                  </div>
+                </div>
+                <textarea
+                  id="promptInput"
+                  class="textarea-control"
+                  placeholder="Escribe las instrucciones que deben tener prioridad en las respuestas..."
+                ></textarea>
+                <div id="promptFeedback" class="feedback" role="status"></div>
+              </section>
+
+              <section class="tab-panel" data-panel="users" aria-labelledby="usersTitle">
+                <div class="panel-header">
+                  <div>
+                    <h2 id="usersTitle" class="section-title">Usuarios admin</h2>
+                    <p class="section-subtitle">Controla quién puede acceder al panel.</p>
+                  </div>
+                </div>
+                <form id="newUserForm" class="inline-form">
+                  <input
+                    id="newUserName"
+                    class="control"
+                    type="text"
+                    placeholder="Usuario"
+                    autocomplete="off"
+                    required
+                  />
+                  <input
+                    id="newUserPassword"
+                    class="control"
+                    type="text"
+                    placeholder="Contraseña temporal"
+                    autocomplete="off"
+                    required
+                  />
+                  <label class="checkbox-control" for="newUserSuper">
+                    <input id="newUserSuper" type="checkbox" />
+                    <span>Super admin</span>
+                  </label>
+                  <button class="btn btn-primary" type="submit">Crear usuario</button>
+                </form>
+                <div id="usersFeedback" class="feedback" role="alert"></div>
+                <div class="table-scroll">
+                  <table class="admin-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Usuario</th>
+                        <th scope="col">Rol</th>
+                        <th scope="col">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody id="usersTable"></tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="restartModal"
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="restartTitle"
+      aria-live="assertive"
+    >
+      <div class="modal-dialog">
+        <h2 id="restartTitle">Reinicio requerido</h2>
+        <p>
+          Los últimos cambios necesitan reiniciar el servicio. La página se recargará en
+          <strong><span id="restartCountdown">5</span> segundos</strong>.
+        </p>
+        <div class="modal-actions">
+          <button id="reloadNowBtn" class="btn btn-primary" type="button">Recargar ahora</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      class UnauthorizedError extends Error {
+        constructor(message) {
+          super(message);
+          this.name = "UnauthorizedError";
+        }
+      }
+
+      const state = { docs: [], users: [] };
+
+      const loginSection = document.getElementById("loginSection");
+      const appSection = document.getElementById("appSection");
+      const loginForm = document.getElementById("loginForm");
+      const loginUser = document.getElementById("loginUser");
+      const loginPassword = document.getElementById("loginPassword");
+      const loginFeedback = document.getElementById("loginFeedback");
+      const logoutBtn = document.getElementById("logoutBtn");
+      const sessionLoader = document.getElementById("sessionLoader");
+      const tabButtons = Array.from(document.querySelectorAll(".tab-button"));
+      const tabPanels = Array.from(document.querySelectorAll(".tab-panel"));
+      const docsList = document.getElementById("docsList");
+      const docsFeedback = document.getElementById("docsFeedback");
+      const docsUpload = document.getElementById("docsUpload");
+      const promptInput = document.getElementById("promptInput");
+      const promptFeedback = document.getElementById("promptFeedback");
+      const refreshPromptBtn = document.getElementById("refreshPromptBtn");
+      const savePromptBtn = document.getElementById("savePromptBtn");
+      const usersFeedback = document.getElementById("usersFeedback");
+      const usersTable = document.getElementById("usersTable");
+      const newUserForm = document.getElementById("newUserForm");
+      const newUserName = document.getElementById("newUserName");
+      const newUserPassword = document.getElementById("newUserPassword");
+      const newUserSuper = document.getElementById("newUserSuper");
+      const restartModal = document.getElementById("restartModal");
+      const restartCountdown = document.getElementById("restartCountdown");
+      const reloadNowBtn = document.getElementById("reloadNowBtn");
+
+      function setActiveTab(tab) {
+        tabButtons.forEach(button => {
+          button.classList.toggle("active", button.dataset.tab === tab);
+        });
+        tabPanels.forEach(panel => {
+          panel.classList.toggle("active", panel.dataset.panel === tab);
+        });
+      }
+
+      tabButtons.forEach(button => {
+        button.addEventListener("click", () => setActiveTab(button.dataset.tab));
+      });
+      setActiveTab("docs");
+
+      function toggleSessionLoader(show) {
+        if (!sessionLoader) return;
+        sessionLoader.classList.toggle("hidden", !show);
+      }
+
+      function setAuthState(isAuthenticated) {
+        if (loginSection) loginSection.classList.toggle("hidden", isAuthenticated);
+        if (appSection) appSection.classList.toggle("hidden", !isAuthenticated);
+        if (logoutBtn) logoutBtn.classList.toggle("hidden", !isAuthenticated);
+      }
+
+      function showFeedback(element, message, variant = "info") {
+        if (!element) return;
+        if (!message) {
+          element.textContent = "";
+          element.classList.remove("is-visible");
+          element.removeAttribute("data-variant");
+          return;
+        }
+        element.textContent = message;
+        element.dataset.variant = variant;
+        element.classList.add("is-visible");
+      }
+
+      function formatBytes(bytes) {
+        if (typeof bytes !== "number" || !isFinite(bytes)) return "--";
+        if (bytes < 1024) return `${bytes} B`;
+        const units = ["KB", "MB", "GB", "TB"];
+        let value = bytes / 1024;
+        let unit = 0;
+        while (value >= 1024 && unit < units.length - 1) {
+          value /= 1024;
+          unit += 1;
+        }
+        const precision = value < 10 ? 1 : 0;
+        return `${value.toFixed(precision)} ${units[unit]}`;
+      }
+
+      function readFileAsBase64(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = reader.result;
+            if (typeof result === "string") {
+              const comma = result.indexOf(",");
+              resolve(comma >= 0 ? result.slice(comma + 1) : result);
+            } else {
+              reject(new Error("No se pudo leer el archivo."));
+            }
+          };
+          reader.onerror = () => reject(new Error("No se pudo leer el archivo."));
+          reader.readAsDataURL(file);
+        });
+      }
+
+      function updateCountdown(value) {
+        if (restartCountdown) restartCountdown.textContent = String(value);
+      }
+
+      let restartInterval = null;
+
+      function showRestartModal() {
+        if (!restartModal || restartModal.classList.contains("is-active")) return;
+        restartModal.classList.add("is-active");
+        let remaining = 5;
+        updateCountdown(remaining);
+        restartInterval = setInterval(() => {
+          remaining -= 1;
+          if (remaining <= 0 && restartInterval) {
+            clearInterval(restartInterval);
+            restartInterval = null;
+          }
+          updateCountdown(Math.max(remaining, 0));
+        }, 1000);
+        setTimeout(() => {
+          window.location.reload();
+        }, 5000);
+      }
+
+      if (reloadNowBtn) {
+        reloadNowBtn.addEventListener("click", () => window.location.reload());
+      }
+
+      function handleRestartFlag(payload) {
+        if (payload && typeof payload === "object" && payload.requiresRestart) {
+          showRestartModal();
+        }
+      }
+
+      async function apiRequest(url, options = {}) {
+        const config = {
+          method: options.method || "GET",
+          credentials: "include",
+          headers: { ...(options.headers || {}) }
+        };
+        if (options.body instanceof FormData) {
+          config.body = options.body;
+        } else if (options.body !== undefined) {
+          config.headers["Content-Type"] = "application/json";
+          config.body = JSON.stringify(options.body);
+        }
+        let response;
+        try {
+          response = await fetch(url, config);
+        } catch (_) {
+          throw new Error("No se pudo conectar con el servidor.");
+        }
+        const contentType = response.headers.get("content-type") || "";
+        const isJson = contentType.includes("application/json");
+        const data = isJson ? await response.json() : null;
+        if (response.status === 401) {
+          throw new UnauthorizedError((data && data.error) || "Sesión caducada.");
+        }
+        if (!response.ok) {
+          const message = (data && (data.error || data.message)) || `Error ${response.status}`;
+          const error = new Error(message);
+          error.response = response;
+          error.data = data;
+          throw error;
+        }
+        return data;
+      }
+
+      function handleError(err, feedbackEl, fallbackMessage) {
+        console.error(err);
+        if (err instanceof UnauthorizedError) {
+          setAuthState(false);
+          showFeedback(loginFeedback, "Tu sesión ha expirado. Vuelve a iniciar sesión.", "error");
+          focusLogin();
+          return;
+        }
+        const message = err && err.message ? err.message : fallbackMessage;
+        if (feedbackEl) {
+          showFeedback(feedbackEl, message || fallbackMessage, "error");
+        }
+      }
+      function renderDocs(showFallback = false) {
+        if (!docsList) return;
+        docsList.innerHTML = "";
+        if (!state.docs.length) {
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.textContent = showFallback
+            ? "No se pudieron cargar los documentos."
+            : "No hay documentos cargados.";
+          docsList.append(empty);
+          return;
+        }
+        const fragment = document.createDocumentFragment();
+        state.docs.forEach(file => {
+          const item = document.createElement("div");
+          item.className = "doc-item";
+
+          const info = document.createElement("div");
+          const name = document.createElement("div");
+          name.className = "doc-name";
+          name.textContent = file?.name || "(sin nombre)";
+          const meta = document.createElement("div");
+          meta.className = "doc-meta";
+          const sizeLabel = typeof file?.size === "number" ? formatBytes(file.size) : "Tamaño desconocido";
+          const mimeLabel = file?.mime ? ` • ${file.mime}` : "";
+          meta.textContent = `${sizeLabel}${mimeLabel}`;
+          info.append(name, meta);
+
+          const actions = document.createElement("div");
+          actions.className = "doc-actions";
+
+          const downloadBtn = document.createElement("button");
+          downloadBtn.type = "button";
+          downloadBtn.className = "chip-btn";
+          downloadBtn.textContent = "Descargar";
+          downloadBtn.addEventListener("click", () => downloadDoc(file.name));
+
+          const deleteBtn = document.createElement("button");
+          deleteBtn.type = "button";
+          deleteBtn.className = "chip-btn danger";
+          deleteBtn.textContent = "Eliminar";
+          deleteBtn.addEventListener("click", () => deleteDoc(file.name));
+
+          actions.append(downloadBtn, deleteBtn);
+          item.append(info, actions);
+          fragment.append(item);
+        });
+        docsList.append(fragment);
+      }
+
+      async function refreshDocs() {
+        if (!state.docs.length && docsList) {
+          docsList.innerHTML = '<div class="empty-state">Cargando documentos...</div>';
+        }
+        try {
+          const data = await apiRequest("/admin/docs");
+          state.docs = Array.isArray(data?.files) ? data.files : [];
+          renderDocs();
+          showFeedback(docsFeedback, "", "info");
+        } catch (err) {
+          handleError(err, docsFeedback, "No se pudo cargar la documentación.");
+          if (!state.docs.length) renderDocs(true);
+        }
+      }
+
+      async function downloadDoc(name) {
+        if (!name) return;
+        try {
+          const response = await fetch(`/admin/docs/${encodeURIComponent(name)}/download`, {
+            credentials: "include"
+          });
+          if (response.status === 401) {
+            throw new UnauthorizedError("Sesión caducada.");
+          }
+          if (!response.ok) {
+            throw new Error(`No se pudo descargar el archivo (${response.status}).`);
+          }
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = name;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          handleError(err, docsFeedback, "No se pudo descargar el documento.");
+        }
+      }
+
+      async function deleteDoc(name) {
+        if (!name) return;
+        if (!confirm(`¿Eliminar el documento "${name}"?`)) return;
+        showFeedback(docsFeedback, "Eliminando documento...", "info");
+        try {
+          const data = await apiRequest(`/admin/docs/${encodeURIComponent(name)}`, { method: "DELETE" });
+          handleRestartFlag(data);
+          await refreshDocs();
+          showFeedback(docsFeedback, "Documento eliminado correctamente.", "success");
+        } catch (err) {
+          handleError(err, docsFeedback, "No se pudo eliminar el documento.");
+        }
+      }
+
+      if (docsUpload) {
+        docsUpload.addEventListener("change", async event => {
+          const file = event.target.files && event.target.files[0];
+          if (!file) return;
+          if (file.size === 0) {
+            showFeedback(docsFeedback, "El archivo está vacío.", "error");
+            docsUpload.value = "";
+            return;
+          }
+          showFeedback(docsFeedback, `Subiendo "${file.name}"...`, "info");
+          try {
+            const base64 = await readFileAsBase64(file);
+            const data = await apiRequest("/admin/docs", {
+              method: "POST",
+              body: { name: file.name, base64 }
+            });
+            handleRestartFlag(data);
+            await refreshDocs();
+            showFeedback(docsFeedback, "Documento cargado correctamente.", "success");
+          } catch (err) {
+            handleError(err, docsFeedback, "No se pudo subir el archivo.");
+          } finally {
+            docsUpload.value = "";
+          }
+        });
+      }
+      function focusLogin() {
+        if (loginUser) {
+          setTimeout(() => loginUser.focus(), 0);
+        }
+      }
+
+      async function loadInstructions(showMessage = false) {
+        try {
+          const data = await apiRequest("/admin/instructions");
+          if (promptInput) promptInput.value = data?.content || "";
+          if (showMessage) {
+            showFeedback(promptFeedback, "Instrucciones recargadas.", "success");
+          } else {
+            showFeedback(promptFeedback, "", "info");
+          }
+        } catch (err) {
+          handleError(err, promptFeedback, "No se pudieron obtener las instrucciones.");
+        }
+      }
+
+      if (refreshPromptBtn) {
+        refreshPromptBtn.addEventListener("click", () => loadInstructions(true));
+      }
+
+      if (savePromptBtn) {
+        savePromptBtn.addEventListener("click", async () => {
+          if (!promptInput) return;
+          savePromptBtn.disabled = true;
+          showFeedback(promptFeedback, "Guardando...", "info");
+          try {
+            const data = await apiRequest("/admin/instructions", {
+              method: "PUT",
+              body: { content: promptInput.value }
+            });
+            handleRestartFlag(data);
+            showFeedback(promptFeedback, "Instrucciones guardadas correctamente.", "success");
+          } catch (err) {
+            handleError(err, promptFeedback, "No se pudieron guardar las instrucciones.");
+          } finally {
+            savePromptBtn.disabled = false;
+          }
+        });
+      }
+
+      function renderUsers() {
+        if (!usersTable) return;
+        usersTable.innerHTML = "";
+        if (!state.users.length) {
+          const row = document.createElement("tr");
+          const cell = document.createElement("td");
+          cell.colSpan = 3;
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.textContent = "No hay usuarios registrados.";
+          cell.append(empty);
+          row.append(cell);
+          usersTable.append(row);
+          return;
+        }
+        state.users.forEach(user => {
+          const tr = document.createElement("tr");
+          const nameCell = document.createElement("td");
+          nameCell.textContent = user.username;
+
+          const roleCell = document.createElement("td");
+          const tag = document.createElement("span");
+          tag.className = "tag" + (user.isSuperAdmin ? " super" : "");
+          tag.textContent = user.isSuperAdmin ? "Super admin" : "Administrador";
+          roleCell.append(tag);
+
+          const actionsCell = document.createElement("td");
+          actionsCell.className = "actions-col";
+
+          const toggleBtn = document.createElement("button");
+          toggleBtn.type = "button";
+          toggleBtn.className = "chip-btn";
+          toggleBtn.textContent = user.isSuperAdmin ? "Quitar super" : "Hacer super";
+          toggleBtn.addEventListener("click", () => toggleSuper(user));
+
+          const resetBtn = document.createElement("button");
+          resetBtn.type = "button";
+          resetBtn.className = "chip-btn";
+          resetBtn.textContent = "Resetear clave";
+          resetBtn.addEventListener("click", () => resetPassword(user.username));
+
+          const deleteBtn = document.createElement("button");
+          deleteBtn.type = "button";
+          deleteBtn.className = "chip-btn danger";
+          deleteBtn.textContent = "Eliminar";
+          deleteBtn.addEventListener("click", () => removeUser(user.username));
+
+          actionsCell.append(toggleBtn, resetBtn, deleteBtn);
+          tr.append(nameCell, roleCell, actionsCell);
+          usersTable.append(tr);
+        });
+      }
+
+      async function refreshUsers() {
+        if (!state.users.length && usersTable) {
+          usersTable.innerHTML = "";
+          const row = document.createElement("tr");
+          const cell = document.createElement("td");
+          cell.colSpan = 3;
+          const loading = document.createElement("div");
+          loading.className = "empty-state";
+          loading.textContent = "Cargando usuarios...";
+          cell.append(loading);
+          row.append(cell);
+          usersTable.append(row);
+        }
+        try {
+          const data = await apiRequest("/admin/users");
+          state.users = Array.isArray(data?.users) ? data.users : [];
+          renderUsers();
+          showFeedback(usersFeedback, "", "info");
+        } catch (err) {
+          handleError(err, usersFeedback, "No se pudieron obtener los usuarios.");
+        }
+      }
+
+      async function toggleSuper(user) {
+        if (!user) return;
+        const target = !user.isSuperAdmin;
+        showFeedback(usersFeedback, "Actualizando permisos...", "info");
+        try {
+          const data = await apiRequest(`/admin/users/${encodeURIComponent(user.username)}`, {
+            method: "PUT",
+            body: { isSuperAdmin: target }
+          });
+          handleRestartFlag(data);
+          await refreshUsers();
+          showFeedback(usersFeedback, "Permisos actualizados correctamente.", "success");
+        } catch (err) {
+          handleError(err, usersFeedback, "No se pudo actualizar el rol.");
+        }
+      }
+
+      async function resetPassword(username) {
+        if (!username) return;
+        const value = prompt(`Introduce la nueva contraseña para ${username}:`);
+        if (value === null) return;
+        const password = value.trim();
+        if (!password) {
+          showFeedback(usersFeedback, "La contraseña no puede estar vacía.", "error");
+          return;
+        }
+        showFeedback(usersFeedback, "Actualizando contraseña...", "info");
+        try {
+          const data = await apiRequest(`/admin/users/${encodeURIComponent(username)}`, {
+            method: "PUT",
+            body: { password }
+          });
+          handleRestartFlag(data);
+          showFeedback(usersFeedback, "Contraseña restablecida.", "success");
+        } catch (err) {
+          handleError(err, usersFeedback, "No se pudo restablecer la contraseña.");
+        }
+      }
+
+      async function removeUser(username) {
+        if (!username) return;
+        if (!confirm(`¿Eliminar al usuario ${username}?`)) return;
+        showFeedback(usersFeedback, "Eliminando usuario...", "info");
+        try {
+          const data = await apiRequest(`/admin/users/${encodeURIComponent(username)}`, {
+            method: "DELETE"
+          });
+          handleRestartFlag(data);
+          await refreshUsers();
+          showFeedback(usersFeedback, "Usuario eliminado correctamente.", "success");
+        } catch (err) {
+          handleError(err, usersFeedback, "No se pudo eliminar el usuario.");
+        }
+      }
+
+      if (newUserForm) {
+        newUserForm.addEventListener("submit", async event => {
+          event.preventDefault();
+          const username = newUserName.value.trim();
+          const password = newUserPassword.value;
+          const isSuperAdmin = newUserSuper.checked;
+          if (!username || !password) {
+            showFeedback(usersFeedback, "Completa el usuario y la contraseña temporal.", "error");
+            return;
+          }
+          showFeedback(usersFeedback, "Creando usuario...", "info");
+          try {
+            const data = await apiRequest("/admin/users", {
+              method: "POST",
+              body: { username, password, isSuperAdmin }
+            });
+            handleRestartFlag(data);
+            newUserForm.reset();
+            await refreshUsers();
+            showFeedback(usersFeedback, `Usuario ${username} creado correctamente.`, "success");
+          } catch (err) {
+            handleError(err, usersFeedback, "No se pudo crear el usuario.");
+          }
+        });
+      }
+
+      if (logoutBtn) {
+        logoutBtn.addEventListener("click", async () => {
+          try {
+            await apiRequest("/admin/logout", { method: "POST" });
+          } catch (err) {
+            console.warn(err);
+          }
+          state.docs = [];
+          state.users = [];
+          renderDocs();
+          renderUsers();
+          setAuthState(false);
+          showFeedback(loginFeedback, "Sesión cerrada correctamente.", "success");
+          focusLogin();
+        });
+      }
+
+      if (loginForm) {
+        loginForm.addEventListener("submit", async event => {
+          event.preventDefault();
+          const username = loginUser.value.trim();
+          const password = loginPassword.value;
+          if (!username || !password) {
+            showFeedback(loginFeedback, "Introduce usuario y contraseña.", "error");
+            focusLogin();
+            return;
+          }
+          showFeedback(loginFeedback, "Verificando credenciales...", "info");
+          try {
+            await apiRequest("/admin/login", {
+              method: "POST",
+              body: { username, password }
+            });
+            loginForm.reset();
+            setAuthState(true);
+            await loadInstructions(false);
+            await Promise.all([refreshDocs(), refreshUsers()]);
+            showFeedback(loginFeedback, "", "info");
+          } catch (err) {
+            if (err instanceof UnauthorizedError) {
+              showFeedback(loginFeedback, "Usuario o contraseña incorrectos.", "error");
+            } else {
+              showFeedback(loginFeedback, err?.message || "No se pudo iniciar sesión.", "error");
+            }
+            focusLogin();
+          }
+        });
+      }
+
+      async function attemptSessionRestore() {
+        try {
+          const data = await apiRequest("/admin/instructions");
+          if (promptInput) promptInput.value = data?.content || "";
+          setAuthState(true);
+          await Promise.all([refreshDocs(), refreshUsers()]);
+          showFeedback(loginFeedback, "", "info");
+        } catch (err) {
+          if (err instanceof UnauthorizedError) {
+            setAuthState(false);
+            focusLogin();
+            return;
+          }
+          showFeedback(loginFeedback, err?.message || "No se pudo comprobar la sesión.", "error");
+          setAuthState(false);
+          focusLogin();
+        }
+      }
+
+      (async () => {
+        toggleSessionLoader(true);
+        try {
+          await attemptSessionRestore();
+          if (!appSection || appSection.classList.contains("hidden")) {
+            focusLogin();
+          }
+        } finally {
+          toggleSessionLoader(false);
+        }
+      })();
+    </script>
+  </body>
+</html>
