@@ -320,12 +320,16 @@ function guessMimeType(filename) {
   }
 }
 
-function scheduleEmbeddingsRebuild() {
-  setTimeout(() => {
-    buildEmbeddingsIndex().catch(err => {
-      console.error("No se pudo reconstruir el índice de embeddings:", err);
-    });
-  }, 100);
+async function triggerEmbeddingReload() {
+  if (embeddingsBuilding) {
+    return { requiresRestart: true };
+  }
+  try {
+    await buildEmbeddingsIndex();
+  } catch (err) {
+    console.error("No se pudo reconstruir el índice de embeddings:", err);
+  }
+  return { requiresRestart: true };
 }
 
 /* ========== Rutas de administración ========== */
@@ -392,7 +396,12 @@ app.post("/admin/users", requireAdmin, async (req, res) => {
     };
     users.push(newUser);
     await saveAdminUsers(users);
-    res.status(201).json({ ok: true, user: { username: newUser.username, isSuperAdmin: newUser.isSuperAdmin } });
+    const reloadInfo = await triggerEmbeddingReload();
+    res.status(201).json({
+      ok: true,
+      user: { username: newUser.username, isSuperAdmin: newUser.isSuperAdmin },
+      ...reloadInfo,
+    });
   } catch (err) {
     console.error("/admin/users POST error:", err);
     res.status(500).json({ ok: false, error: "No se pudo crear el usuario." });
@@ -427,7 +436,12 @@ app.put("/admin/users/:username", requireAdmin, async (req, res) => {
 
     await saveAdminUsers(users);
     invalidateAdminSessions(target);
-    res.json({ ok: true, user: { username: user.username, isSuperAdmin: user.isSuperAdmin } });
+    const reloadInfo = await triggerEmbeddingReload();
+    res.json({
+      ok: true,
+      user: { username: user.username, isSuperAdmin: user.isSuperAdmin },
+      ...reloadInfo,
+    });
   } catch (err) {
     console.error("/admin/users PUT error:", err);
     res.status(500).json({ ok: false, error: "No se pudo actualizar el usuario." });
@@ -449,7 +463,8 @@ app.delete("/admin/users/:username", requireAdmin, async (req, res) => {
     const [removed] = users.splice(index, 1);
     await saveAdminUsers(users);
     invalidateAdminSessions(removed?.username);
-    res.json({ ok: true, deleted: removed?.username });
+    const reloadInfo = await triggerEmbeddingReload();
+    res.json({ ok: true, deleted: removed?.username, ...reloadInfo });
   } catch (err) {
     console.error("/admin/users DELETE error:", err);
     res.status(500).json({ ok: false, error: "No se pudo eliminar el usuario." });
@@ -506,8 +521,12 @@ app.post("/admin/docs", requireAdmin, async (req, res) => {
 
     const dest = path.join(DOCS_DIR, safeName);
     await fs.writeFile(dest, buffer);
-    scheduleEmbeddingsRebuild();
-    res.status(201).json({ ok: true, file: { name: safeName, size: buffer.length, mime: guessMimeType(safeName) } });
+    const reloadInfo = await triggerEmbeddingReload();
+    res.status(201).json({
+      ok: true,
+      file: { name: safeName, size: buffer.length, mime: guessMimeType(safeName) },
+      ...reloadInfo,
+    });
   } catch (err) {
     console.error("/admin/docs POST error:", err);
     res.status(500).json({ ok: false, error: "No se pudo guardar el archivo." });
@@ -538,8 +557,8 @@ app.put("/admin/docs/:name", requireAdmin, async (req, res) => {
       if (err?.code !== "ENOENT") throw err;
     }
     await fs.rename(fromPath, toPath);
-    scheduleEmbeddingsRebuild();
-    res.json({ ok: true, from: currentName, to: safeNewName });
+    const reloadInfo = await triggerEmbeddingReload();
+    res.json({ ok: true, from: currentName, to: safeNewName, ...reloadInfo });
   } catch (err) {
     if (err?.code === "ENOENT") {
       return res.status(404).json({ ok: false, error: "Archivo no encontrado." });
@@ -561,8 +580,8 @@ app.delete("/admin/docs/:name", requireAdmin, async (req, res) => {
 
     const target = path.join(DOCS_DIR, safeName);
     await fs.unlink(target);
-    scheduleEmbeddingsRebuild();
-    res.json({ ok: true, deleted: safeName });
+    const reloadInfo = await triggerEmbeddingReload();
+    res.json({ ok: true, deleted: safeName, ...reloadInfo });
   } catch (err) {
     if (err?.code === "ENOENT") {
       return res.status(404).json({ ok: false, error: "Archivo no encontrado." });
@@ -622,8 +641,8 @@ app.put("/admin/instructions", requireAdmin, async (req, res) => {
     }
     const instruccionesPath = path.join(DOCS_DIR, "instrucciones.txt");
     await fs.writeFile(instruccionesPath, content, "utf8");
-    scheduleEmbeddingsRebuild();
-    res.json({ ok: true });
+    const reloadInfo = await triggerEmbeddingReload();
+    res.json({ ok: true, ...reloadInfo });
   } catch (err) {
     console.error("/admin/instructions PUT error:", err);
     res.status(500).json({ ok: false, error: "No se pudieron actualizar las instrucciones." });
