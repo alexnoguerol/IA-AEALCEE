@@ -81,6 +81,89 @@ async function ensurePdfParse() {
 const DOCS_DIR = path.join(__dirname, "documentacion");
 try { fsSync.mkdirSync(DOCS_DIR, { recursive: true }); } catch {}
 
+const ADMIN_USERS_PATH = path.join(DOCS_DIR, "admin-users.json");
+
+async function loadAdminUsers() {
+  try {
+    const raw = await fs.readFile(ADMIN_USERS_PATH, "utf8");
+    if (!raw.trim()) return [];
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data)) return [];
+    return data
+      .map(user => {
+        if (!user || typeof user.username !== "string" || typeof user.passwordHash !== "string") {
+          return null;
+        }
+        const username = user.username.trim();
+        if (!username) return null;
+        return {
+          username,
+          passwordHash: user.passwordHash,
+          isSuperAdmin: !!user.isSuperAdmin,
+        };
+      })
+      .filter(Boolean);
+  } catch (err) {
+    if (err?.code === "ENOENT") return [];
+    console.error("Error al cargar admin-users.json:", err);
+    return [];
+  }
+}
+
+async function saveAdminUsers(users = []) {
+  const payload = JSON.stringify(users, null, 2);
+  await fs.writeFile(ADMIN_USERS_PATH, payload, "utf8");
+}
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(password, salt, 64);
+  return {
+    salt: salt.toString("hex"),
+    hash: hash.toString("hex"),
+  };
+}
+
+function parsePasswordHash(passwordHash = "") {
+  const [salt, hash] = String(passwordHash).split(":");
+  if (!salt || !hash) return null;
+  try {
+    return {
+      salt: Buffer.from(salt, "hex"),
+      hash: Buffer.from(hash, "hex"),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function verifyPassword(password, passwordHash) {
+  const parsed = parsePasswordHash(passwordHash);
+  if (!parsed) return false;
+  const { salt, hash } = parsed;
+  try {
+    const derived = crypto.scryptSync(password, salt, hash.length);
+    return crypto.timingSafeEqual(hash, derived);
+  } catch {
+    return false;
+  }
+}
+
+async function ensureDefaultAdminUser() {
+  const users = await loadAdminUsers();
+  if (users.length > 0) return users;
+
+  const { salt, hash } = hashPassword("1234");
+  const defaultUser = {
+    username: "admin",
+    passwordHash: `${salt}:${hash}`,
+    isSuperAdmin: true,
+  };
+  await saveAdminUsers([defaultUser]);
+  console.log("⚠️  Generado usuario administrador por defecto (admin / 1234).");
+  return [defaultUser];
+}
+
 /* ========== API keys múltiples ========== */
 function loadApiKeysFromEnv() {
   const list = new Set();
@@ -133,6 +216,419 @@ function ensureSession(req, res) {
   }
   return { sid, kid };
 }
+
+/* ========== Sesiones de administración ========== */
+const adminSessions = new Map(); // sid -> { username, isSuperAdmin, expiresAt }
+const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const ADMIN_COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: "lax",
+  secure: !!process.env.COOKIE_SECURE,
+  signed: true,
+  path: "/",
+};
+
+function pruneAdminSessions() {
+  const now = Date.now();
+  for (const [sid, session] of adminSessions) {
+    if (!session || session.expiresAt <= now) {
+      adminSessions.delete(sid);
+    }
+  }
+}
+
+function invalidateAdminSessions(username) {
+  if (!username) return;
+  for (const [sid, session] of adminSessions) {
+    if (session?.username === username) {
+      adminSessions.delete(sid);
+    }
+  }
+}
+
+function createAdminSession(res, username, isSuperAdmin) {
+  pruneAdminSessions();
+  invalidateAdminSessions(username);
+  const sid = crypto.randomBytes(24).toString("hex");
+  const expiresAt = Date.now() + ADMIN_SESSION_TTL_MS;
+  adminSessions.set(sid, { username, isSuperAdmin: !!isSuperAdmin, expiresAt });
+  res.cookie("admin_sid", sid, { ...ADMIN_COOKIE_OPTIONS, maxAge: ADMIN_SESSION_TTL_MS });
+  return sid;
+}
+
+async function requireAdmin(req, res, next) {
+  try {
+    pruneAdminSessions();
+    const sid = req.signedCookies?.admin_sid;
+    if (!sid) {
+      return res.status(401).json({ ok: false, error: "Autenticación requerida." });
+    }
+    const session = adminSessions.get(sid);
+    if (!session) {
+      res.clearCookie("admin_sid", ADMIN_COOKIE_OPTIONS);
+      return res.status(401).json({ ok: false, error: "Sesión no válida." });
+    }
+    if (session.expiresAt <= Date.now()) {
+      adminSessions.delete(sid);
+      res.clearCookie("admin_sid", ADMIN_COOKIE_OPTIONS);
+      return res.status(401).json({ ok: false, error: "Sesión expirada." });
+    }
+
+    // Garantiza que el usuario todavía exista
+    const users = await loadAdminUsers();
+    const current = users.find(u => u.username === session.username);
+    if (!current) {
+      adminSessions.delete(sid);
+      res.clearCookie("admin_sid", ADMIN_COOKIE_OPTIONS);
+      return res.status(401).json({ ok: false, error: "Usuario no disponible." });
+    }
+
+    session.expiresAt = Date.now() + ADMIN_SESSION_TTL_MS;
+    adminSessions.set(sid, session);
+    req.admin = { username: current.username, isSuperAdmin: !!current.isSuperAdmin };
+    next();
+  } catch (err) {
+    console.error("Error al validar sesión de administrador:", err);
+    return res.status(500).json({ ok: false, error: "Error de autenticación." });
+  }
+}
+
+function sanitizeDocName(name) {
+  if (typeof name !== "string") return null;
+  const cleaned = name.trim();
+  if (!cleaned) return null;
+  if (cleaned.includes("..") || cleaned.includes("/") || cleaned.includes("\\")) return null;
+  return cleaned;
+}
+
+function isReservedDoc(name) {
+  return name === "admin-users.json" || name === "instrucciones.txt";
+}
+
+function guessMimeType(filename) {
+  const ext = path.extname(filename || "").toLowerCase();
+  switch (ext) {
+    case ".txt":
+    case ".md":
+      return "text/plain";
+    case ".pdf":
+      return "application/pdf";
+    case ".json":
+      return "application/json";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+function scheduleEmbeddingsRebuild() {
+  setTimeout(() => {
+    buildEmbeddingsIndex().catch(err => {
+      console.error("No se pudo reconstruir el índice de embeddings:", err);
+    });
+  }, 100);
+}
+
+/* ========== Rutas de administración ========== */
+app.post("/admin/login", async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+    if (typeof username !== "string" || typeof password !== "string" || !username.trim()) {
+      return res.status(400).json({ ok: false, error: "Credenciales inválidas." });
+    }
+
+    const users = await loadAdminUsers();
+    const user = users.find(u => u.username === username.trim());
+    if (!user || !verifyPassword(password, user.passwordHash)) {
+      return res.status(401).json({ ok: false, error: "Usuario o contraseña incorrectos." });
+    }
+
+    createAdminSession(res, user.username, user.isSuperAdmin);
+    return res.json({ ok: true, username: user.username, isSuperAdmin: !!user.isSuperAdmin });
+  } catch (err) {
+    console.error("/admin/login error:", err);
+    return res.status(500).json({ ok: false, error: "No se pudo iniciar sesión." });
+  }
+});
+
+app.post("/admin/logout", (req, res) => {
+  const sid = req.signedCookies?.admin_sid;
+  if (sid) {
+    const session = adminSessions.get(sid);
+    if (session) adminSessions.delete(sid);
+  }
+  res.clearCookie("admin_sid", ADMIN_COOKIE_OPTIONS);
+  res.json({ ok: true });
+});
+
+app.get("/admin/users", requireAdmin, async (req, res) => {
+  try {
+    const users = await loadAdminUsers();
+    const sanitized = users.map(u => ({ username: u.username, isSuperAdmin: !!u.isSuperAdmin }));
+    res.json({ ok: true, users: sanitized });
+  } catch (err) {
+    console.error("/admin/users GET error:", err);
+    res.status(500).json({ ok: false, error: "No se pudieron obtener los usuarios." });
+  }
+});
+
+app.post("/admin/users", requireAdmin, async (req, res) => {
+  try {
+    const { username, password, isSuperAdmin = false } = req.body || {};
+    const cleanUsername = typeof username === "string" ? username.trim() : "";
+    if (!cleanUsername || typeof password !== "string" || password.length === 0) {
+      return res.status(400).json({ ok: false, error: "Datos de usuario incompletos." });
+    }
+
+    const users = await loadAdminUsers();
+    if (users.some(u => u.username === cleanUsername)) {
+      return res.status(409).json({ ok: false, error: "El usuario ya existe." });
+    }
+
+    const { salt, hash } = hashPassword(password);
+    const newUser = {
+      username: cleanUsername,
+      passwordHash: `${salt}:${hash}`,
+      isSuperAdmin: !!isSuperAdmin,
+    };
+    users.push(newUser);
+    await saveAdminUsers(users);
+    res.status(201).json({ ok: true, user: { username: newUser.username, isSuperAdmin: newUser.isSuperAdmin } });
+  } catch (err) {
+    console.error("/admin/users POST error:", err);
+    res.status(500).json({ ok: false, error: "No se pudo crear el usuario." });
+  }
+});
+
+app.put("/admin/users/:username", requireAdmin, async (req, res) => {
+  try {
+    const target = req.params.username;
+    const users = await loadAdminUsers();
+    const user = users.find(u => u.username === target);
+    if (!user) {
+      return res.status(404).json({ ok: false, error: "Usuario no encontrado." });
+    }
+
+    const { password, isSuperAdmin } = req.body || {};
+    let changed = false;
+
+    if (typeof password === "string" && password.length > 0) {
+      const { salt, hash } = hashPassword(password);
+      user.passwordHash = `${salt}:${hash}`;
+      changed = true;
+    }
+    if (typeof isSuperAdmin === "boolean") {
+      user.isSuperAdmin = isSuperAdmin;
+      changed = true;
+    }
+
+    if (!changed) {
+      return res.status(400).json({ ok: false, error: "No hay cambios que aplicar." });
+    }
+
+    await saveAdminUsers(users);
+    invalidateAdminSessions(target);
+    res.json({ ok: true, user: { username: user.username, isSuperAdmin: user.isSuperAdmin } });
+  } catch (err) {
+    console.error("/admin/users PUT error:", err);
+    res.status(500).json({ ok: false, error: "No se pudo actualizar el usuario." });
+  }
+});
+
+app.delete("/admin/users/:username", requireAdmin, async (req, res) => {
+  try {
+    const target = req.params.username;
+    const users = await loadAdminUsers();
+    const index = users.findIndex(u => u.username === target);
+    if (index === -1) {
+      return res.status(404).json({ ok: false, error: "Usuario no encontrado." });
+    }
+    if (users.length <= 1) {
+      return res.status(400).json({ ok: false, error: "No se puede eliminar al último administrador." });
+    }
+
+    const [removed] = users.splice(index, 1);
+    await saveAdminUsers(users);
+    invalidateAdminSessions(removed?.username);
+    res.json({ ok: true, deleted: removed?.username });
+  } catch (err) {
+    console.error("/admin/users DELETE error:", err);
+    res.status(500).json({ ok: false, error: "No se pudo eliminar el usuario." });
+  }
+});
+
+app.get("/admin/docs", requireAdmin, async (req, res) => {
+  try {
+    const entries = await fs.readdir(DOCS_DIR, { withFileTypes: true });
+    const files = [];
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      if (entry.name.startsWith(".")) continue;
+      if (isReservedDoc(entry.name)) continue;
+      const fullPath = path.join(DOCS_DIR, entry.name);
+      try {
+        const stats = await fs.stat(fullPath);
+        files.push({
+          name: entry.name,
+          size: stats.size,
+          mime: guessMimeType(entry.name),
+        });
+      } catch (err) {
+        console.warn(`No se pudo leer metadatos de ${entry.name}:`, err?.message || err);
+      }
+    }
+    res.json({ ok: true, files });
+  } catch (err) {
+    console.error("/admin/docs GET error:", err);
+    res.status(500).json({ ok: false, error: "No se pudo listar la documentación." });
+  }
+});
+
+app.post("/admin/docs", requireAdmin, async (req, res) => {
+  try {
+    const { name, base64 } = req.body || {};
+    const safeName = sanitizeDocName(name);
+    if (!safeName || typeof base64 !== "string") {
+      return res.status(400).json({ ok: false, error: "Datos de archivo inválidos." });
+    }
+    if (isReservedDoc(safeName)) {
+      return res.status(400).json({ ok: false, error: "Nombre de archivo restringido." });
+    }
+
+    let buffer;
+    try {
+      buffer = Buffer.from(base64, "base64");
+    } catch {
+      return res.status(400).json({ ok: false, error: "Contenido base64 inválido." });
+    }
+    if (!buffer || buffer.length === 0) {
+      return res.status(400).json({ ok: false, error: "El archivo está vacío." });
+    }
+
+    const dest = path.join(DOCS_DIR, safeName);
+    await fs.writeFile(dest, buffer);
+    scheduleEmbeddingsRebuild();
+    res.status(201).json({ ok: true, file: { name: safeName, size: buffer.length, mime: guessMimeType(safeName) } });
+  } catch (err) {
+    console.error("/admin/docs POST error:", err);
+    res.status(500).json({ ok: false, error: "No se pudo guardar el archivo." });
+  }
+});
+
+app.put("/admin/docs/:name", requireAdmin, async (req, res) => {
+  try {
+    const currentName = sanitizeDocName(req.params.name);
+    const { newName } = req.body || {};
+    const safeNewName = sanitizeDocName(newName);
+    if (!currentName || !safeNewName) {
+      return res.status(400).json({ ok: false, error: "Nombre de archivo inválido." });
+    }
+    if (currentName === safeNewName) {
+      return res.status(400).json({ ok: false, error: "El nuevo nombre debe ser diferente." });
+    }
+    if (isReservedDoc(currentName) || isReservedDoc(safeNewName)) {
+      return res.status(400).json({ ok: false, error: "Operación no permitida sobre archivos restringidos." });
+    }
+
+    const fromPath = path.join(DOCS_DIR, currentName);
+    const toPath = path.join(DOCS_DIR, safeNewName);
+    try {
+      await fs.access(toPath);
+      return res.status(409).json({ ok: false, error: "Ya existe un archivo con el nombre indicado." });
+    } catch (err) {
+      if (err?.code !== "ENOENT") throw err;
+    }
+    await fs.rename(fromPath, toPath);
+    scheduleEmbeddingsRebuild();
+    res.json({ ok: true, from: currentName, to: safeNewName });
+  } catch (err) {
+    if (err?.code === "ENOENT") {
+      return res.status(404).json({ ok: false, error: "Archivo no encontrado." });
+    }
+    console.error("/admin/docs PUT error:", err);
+    res.status(500).json({ ok: false, error: "No se pudo renombrar el archivo." });
+  }
+});
+
+app.delete("/admin/docs/:name", requireAdmin, async (req, res) => {
+  try {
+    const safeName = sanitizeDocName(req.params.name);
+    if (!safeName) {
+      return res.status(400).json({ ok: false, error: "Nombre de archivo inválido." });
+    }
+    if (isReservedDoc(safeName)) {
+      return res.status(400).json({ ok: false, error: "No se puede eliminar este archivo." });
+    }
+
+    const target = path.join(DOCS_DIR, safeName);
+    await fs.unlink(target);
+    scheduleEmbeddingsRebuild();
+    res.json({ ok: true, deleted: safeName });
+  } catch (err) {
+    if (err?.code === "ENOENT") {
+      return res.status(404).json({ ok: false, error: "Archivo no encontrado." });
+    }
+    console.error("/admin/docs DELETE error:", err);
+    res.status(500).json({ ok: false, error: "No se pudo eliminar el archivo." });
+  }
+});
+
+app.get("/admin/docs/:name/download", requireAdmin, (req, res) => {
+  const safeName = sanitizeDocName(req.params.name);
+  if (!safeName) {
+    return res.status(400).json({ ok: false, error: "Nombre de archivo inválido." });
+  }
+  if (isReservedDoc(safeName)) {
+    return res.status(400).json({ ok: false, error: "Operación no permitida sobre archivos restringidos." });
+  }
+  res.sendFile(safeName, { root: DOCS_DIR }, err => {
+    if (err) {
+      if (err.code === "ENOENT" || err.statusCode === 404) {
+        return res.status(404).json({ ok: false, error: "Archivo no encontrado." });
+      }
+      console.error("/admin/docs download error:", err);
+      if (!res.headersSent) {
+        res.status(500).json({ ok: false, error: "No se pudo descargar el archivo." });
+      }
+    }
+  });
+});
+
+app.get("/admin/instructions", requireAdmin, async (req, res) => {
+  try {
+    const instruccionesPath = path.join(DOCS_DIR, "instrucciones.txt");
+    let content = "";
+    try {
+      content = await fs.readFile(instruccionesPath, "utf8");
+    } catch (err) {
+      if (err?.code === "ENOENT") {
+        await fs.writeFile(instruccionesPath, "", "utf8");
+        content = "";
+      } else {
+        throw err;
+      }
+    }
+    res.json({ ok: true, content });
+  } catch (err) {
+    console.error("/admin/instructions GET error:", err);
+    res.status(500).json({ ok: false, error: "No se pudieron leer las instrucciones." });
+  }
+});
+
+app.put("/admin/instructions", requireAdmin, async (req, res) => {
+  try {
+    const { content } = req.body || {};
+    if (typeof content !== "string") {
+      return res.status(400).json({ ok: false, error: "Contenido inválido." });
+    }
+    const instruccionesPath = path.join(DOCS_DIR, "instrucciones.txt");
+    await fs.writeFile(instruccionesPath, content, "utf8");
+    scheduleEmbeddingsRebuild();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("/admin/instructions PUT error:", err);
+    res.status(500).json({ ok: false, error: "No se pudieron actualizar las instrucciones." });
+  }
+});
 
 /* ========== Usuarios conectados (por inactividad) ========== */
 const activeSessions = new Map(); // sid -> lastSeen
@@ -241,6 +737,10 @@ function isQuotaOrRateErr(err) {
 
 /* ========== Lectura de documentación ========== */
 const MAX_DOCS = 3;                // máximo de archivos a cargar por consulta
+const MAX_CHUNKS_PER_RESPONSE = (() => {
+  const raw = parseInt(String(process.env.MAX_CHUNKS_PER_RESPONSE ?? ""), 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 2; // tope de fragmentos por archivo en la respuesta
+})();
 const MAX_DOC_BYTES = 120_000;     // tope por archivo (evitar prompts gigantes)
 
 // Lista títulos (nombres de archivo)
@@ -289,6 +789,13 @@ function parsePositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+// Variables de entorno para embeddings y fragmentación:
+// - GEMINI_EMBEDDING_MODEL: modelo de embeddings a utilizar.
+// - EMBED_CHUNK_SIZE: tamaño máximo de cada fragmento generado.
+// - EMBED_CHUNK_OVERLAP: solapamiento entre fragmentos consecutivos.
+// - EMBED_MAX_CHUNKS_PER_DOC: tope de fragmentos generados por documento en el índice.
+// - MAX_CHUNKS_PER_RESPONSE: máximo de fragmentos por documento a incluir en una respuesta (mantén valores bajos para no
+//   superar los límites de tokens del modelo en el preámbulo).
 const EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || "text-embedding-004";
 const EMBEDDING_CHUNK_SIZE = parsePositiveInt(process.env.EMBED_CHUNK_SIZE, 1400);
 const EMBEDDING_CHUNK_OVERLAP = Math.min(
@@ -461,14 +968,29 @@ async function selectDocsForQuery(query) {
         .filter(item => Number.isFinite(item.score))
         .sort((a, b) => b.score - a.score);
 
-      const seen = new Set();
       const docs = [];
+      const counts = new Map();
+      const uniqueDocs = new Set();
+      const maxTotalChunks = Math.max(1, MAX_DOCS * MAX_CHUNKS_PER_RESPONSE);
       for (const chunk of rankedChunks) {
-        if (docs.length >= MAX_DOCS) break;
-        if (seen.has(chunk.name)) continue;
-        seen.add(chunk.name);
-        const displayName = chunk.chunk > 0 ? `${chunk.name} (fragmento ${chunk.chunk + 1})` : chunk.name;
+        const docName = chunk.name;
+        const alreadySeen = uniqueDocs.has(docName);
+        if (!alreadySeen && uniqueDocs.size >= MAX_DOCS) continue;
+
+        const used = counts.get(docName) || 0;
+        if (used >= MAX_CHUNKS_PER_RESPONSE) continue;
+
+        const newCount = used + 1;
+        counts.set(docName, newCount);
+        uniqueDocs.add(docName);
+
+        const fragmentNumber = Number.isInteger(chunk.chunk) && chunk.chunk >= 0
+          ? chunk.chunk + 1
+          : newCount;
+        const displayName = `${docName} – fragmento ${fragmentNumber}`;
+
         docs.push({ name: displayName, content: chunk.text });
+        if (docs.length >= maxTotalChunks) break;
       }
       if (docs.length) {
         return { titles, docs };
@@ -629,6 +1151,7 @@ Si el contenido adjunto ayuda, úsalo. Si no, sugiere consultar https://aealcee.
 });
 
 /* ========== Arranque ========== */
+await ensureDefaultAdminUser();
 await buildEmbeddingsIndex();
 
 const port = process.env.PORT || 3000;
