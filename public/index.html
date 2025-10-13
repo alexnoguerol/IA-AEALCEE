@@ -44,14 +44,7 @@
           </div>
         </div>
 
-        <div id="log" class="chat">
-          <div id="empty" class="empty">
-            <div>
-              <div style="font-weight:700;color:var(--primary);margin-bottom:8px">¡Hola!</div>
-              <div style="color:var(--muted)">Escribe tu primera pregunta abajo para empezar.</div>
-            </div>
-          </div>
-        </div>
+        <div id="log" class="chat"></div>
 
         <form id="form" class="composer">
           <div class="input">
@@ -72,7 +65,6 @@
       const msg = document.getElementById("msg");
       const resetBtn = document.getElementById("resetBtn");
       const modelBtn = document.getElementById("modelBtn");
-      const empty = document.getElementById("empty");
       const sendBtn = document.getElementById("sendBtn");
       const usersCountEl = document.getElementById("usersCount");
       const navExtraLink = document.getElementById("navExtraLink");
@@ -86,6 +78,17 @@
       let history = [];
       let typingRow = null;
       let cooldownTimer = null;
+
+      function renderEmptyState() {
+        log.innerHTML = `
+          <div id="empty" class="empty">
+            <div>
+              <div style="font-weight:700;color:var(--primary);margin-bottom:8px">¡Hola!</div>
+              <div style="color:var(--muted)">Escribe tu primera pregunta abajo para empezar.</div>
+            </div>
+          </div>
+        `;
+      }
 
       async function refreshModelBadge() {
         try {
@@ -114,6 +117,7 @@
       }
 
       function addRow({who, text, typing=false}) {
+        const empty = document.getElementById("empty");
         if (empty) empty.remove();
         const row = document.createElement("div");
         row.className = "row " + (who === "user" ? "user" : "bot");
@@ -230,14 +234,7 @@
 
       resetBtn.addEventListener("click", () => {
         history = [];
-        log.innerHTML = `
-          <div id="empty" class="empty">
-            <div>
-              <div style="font-weight:700;color:var(--primary);margin-bottom:8px">Chat reiniciado</div>
-              <div style="color:var(--muted)">Escribe un nuevo mensaje para comenzar.</div>
-            </div>
-          </div>
-        `;
+        renderEmptyState();
         msg.value = ""; msg.focus();
         hideTyping();
         if (cooldownTimer) { clearInterval(cooldownTimer); cooldownTimer = null; }
@@ -245,6 +242,8 @@
         refreshModelBadge();
         refreshUsers();
       });
+
+      renderEmptyState();
 
       msg.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && !e.shiftKey) {
