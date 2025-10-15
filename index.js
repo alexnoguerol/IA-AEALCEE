@@ -94,7 +94,9 @@ async function appendDevLog(sid, label, payload) {
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+
+const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || "25mb";
+app.use(express.json({ limit: JSON_BODY_LIMIT }));
 app.use(express.static("public"));
 app.use(cookieParser(process.env.COOKIE_SECRET || "cambia-esto-por-un-secreto"));
 
