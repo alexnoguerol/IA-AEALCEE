@@ -85,6 +85,15 @@
                   </label>
                 </div>
                 <div id="docsFeedback" class="feedback" role="alert"></div>
+                <div
+                  id="docsUploadStatus"
+                  class="upload-status hidden"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span id="docsUploadStatusText" class="status-text"></span>
+                  <progress id="docsUploadProgress" max="100" value="0"></progress>
+                </div>
                 <div id="docsList" class="docs-list">
                   <div class="empty-state">Aún no se ha cargado ninguna documentación.</div>
                 </div>
@@ -202,6 +211,9 @@
       const docsList = document.getElementById("docsList");
       const docsFeedback = document.getElementById("docsFeedback");
       const docsUpload = document.getElementById("docsUpload");
+      const docsUploadStatus = document.getElementById("docsUploadStatus");
+      const docsUploadProgress = document.getElementById("docsUploadProgress");
+      const docsUploadStatusText = document.getElementById("docsUploadStatusText");
       const promptInput = document.getElementById("promptInput");
       const promptFeedback = document.getElementById("promptFeedback");
       const refreshPromptBtn = document.getElementById("refreshPromptBtn");
@@ -282,6 +294,96 @@
           };
           reader.onerror = () => reject(new Error("No se pudo leer el archivo."));
           reader.readAsDataURL(file);
+        });
+      }
+
+      function toggleUploadStatus(show) {
+        if (!docsUploadStatus) return;
+        docsUploadStatus.classList.toggle("hidden", !show);
+      }
+
+      function updateUploadStatus(value, message) {
+        if (docsUploadProgress) {
+          if (typeof value === "number" && Number.isFinite(value)) {
+            const clamped = Math.max(0, Math.min(100, value));
+            docsUploadProgress.value = clamped;
+          } else {
+            docsUploadProgress.removeAttribute("value");
+          }
+        }
+        if (docsUploadStatusText && typeof message === "string") {
+          docsUploadStatusText.textContent = message;
+        }
+      }
+
+      function resetUploadStatus() {
+        if (docsUploadProgress) {
+          docsUploadProgress.value = 0;
+          docsUploadProgress.setAttribute("value", "0");
+        }
+        if (docsUploadStatusText) {
+          docsUploadStatusText.textContent = "";
+        }
+      }
+
+      function uploadDocWithProgress(name, base64, onProgress) {
+        return new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("POST", "/admin/docs");
+          xhr.withCredentials = true;
+          xhr.setRequestHeader("Content-Type", "application/json");
+
+          if (xhr.upload && typeof onProgress === "function") {
+            xhr.upload.addEventListener("progress", event => {
+              if (event.lengthComputable) {
+                const percent = Math.round((event.loaded / event.total) * 100);
+                onProgress(percent, event);
+              } else {
+                onProgress(null, event);
+              }
+            });
+          }
+
+          xhr.addEventListener("load", () => {
+            let data = null;
+            const text = xhr.responseText;
+            if (text) {
+              try {
+                data = JSON.parse(text);
+              } catch (err) {
+                reject(new Error("Respuesta inválida del servidor."));
+                return;
+              }
+            }
+            if (typeof onProgress === "function") {
+              onProgress(100);
+            }
+            if (xhr.status === 401) {
+              reject(new UnauthorizedError((data && data.error) || "Sesión caducada."));
+              return;
+            }
+            if (xhr.status < 200 || xhr.status >= 300) {
+              const message = (data && (data.error || data.message)) || `Error ${xhr.status}`;
+              reject(new Error(message));
+              return;
+            }
+            resolve(data);
+          });
+
+          xhr.addEventListener("error", () => {
+            reject(new Error("No se pudo conectar con el servidor."));
+          });
+
+          xhr.addEventListener("abort", () => {
+            reject(new Error("La carga fue cancelada."));
+          });
+
+          try {
+            const payload = JSON.stringify({ name, base64 });
+            xhr.send(payload);
+          } catch (err) {
+            reject(err);
+          }
         });
       }
 
@@ -475,25 +577,36 @@
         docsUpload.addEventListener("change", async event => {
           const file = event.target.files && event.target.files[0];
           if (!file) return;
+          const cleanup = () => {
+            docsUpload.value = "";
+            toggleUploadStatus(false);
+            resetUploadStatus();
+          };
           if (file.size === 0) {
             showFeedback(docsFeedback, "El archivo está vacío.", "error");
-            docsUpload.value = "";
+            cleanup();
             return;
           }
+          toggleUploadStatus(true);
+          updateUploadStatus(0, `Subiendo "${file.name}"...`);
           showFeedback(docsFeedback, `Subiendo "${file.name}"...`, "info");
           try {
             const base64 = await readFileAsBase64(file);
-            const data = await apiRequest("/admin/docs", {
-              method: "POST",
-              body: { name: file.name, base64 }
+            const data = await uploadDocWithProgress(file.name, base64, percent => {
+              if (percent == null) {
+                updateUploadStatus(null, `Subiendo "${file.name}"...`);
+                return;
+              }
+              updateUploadStatus(percent, `Subiendo "${file.name}"...`);
             });
             handleRestartFlag(data);
             await refreshDocs();
+            updateUploadStatus(100, `Subiendo "${file.name}"...`);
             showFeedback(docsFeedback, "Documento cargado correctamente.", "success");
           } catch (err) {
             handleError(err, docsFeedback, "No se pudo subir el archivo.");
           } finally {
-            docsUpload.value = "";
+            cleanup();
           }
         });
       }
